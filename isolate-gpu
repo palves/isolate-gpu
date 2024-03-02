@@ -1,0 +1,218 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Author  : Pedro Alves (pedro@palves.net)
+
+# The container's entry point cd's to the host's current working
+# directory, passed down by ISOLATE_CWD.
+#
+# I have network filesystems mounted under /net, and I typically have
+# sources or build dirs on network drives, so I'm mounting those as
+# well in the container.  If you don't have /net on your system,
+# you'll just end up with an empty /net dir in the container.
+#
+# Append "-isolate-gpu" to the hostname inside the container, to make
+# it easy to tell when inside the container in shell prompts.
+#
+#  --network=host speeds up container startup time.  "time isolate-gpu
+#  /bin/true" goes down from around 0.7s to 0.3s at the time of
+#  writing.  It's also slightly faster than --network=none.
+#
+
+DIR=$(dirname -- "$0";)
+ME=$(basename "$0")
+
+VERBOSE=0
+CONTAINER_HOSTNAME=
+GPU_IDXS=()
+
+echoerr() { echo "$@" 1>&2; }
+
+suggest_help() {
+    echo "Try '$ME --help' for more information."
+}
+
+help() {
+    cat <<EOF
+Usage: $ME [OPT]... [CMD]
+Isolate the given GPU devices in a container.
+Note the container is a thin wrapper around the host's filesystem.
+There is no separate distribution inside the container.
+
+Options:
+
+  -d, --device GPU_IDX	   Index of the GPU to isolate.	 Must be specified
+			   at least one, and can be specified more than once.
+  -H, --hostname HOSTNAME  Optional hostname to use in the container.
+  -v			   Be verbose.
+  -h, --help		   Display this help and exit.
+  --                       Stop processing command line arguments.
+
+CMD, if specified, it is a command to invoke within the container.
+Once the command exits, so does the container.  If CMD is not
+specified, run an interactive login shell.
+
+GPUs are specified by index.  Index 0 corresponds to
+/dev/dri/renderD128, index 1 to /dev/dri/renderD129, etc.
+
+The non-user-data OS directories are mounted readonly within the
+container.  That is, /usr/, /etc, /var/, etc.  This is to avoid the
+possibility of the container corrupting the host.  /home, /net, and
+/mnt, are mounted read-write.
+
+If a hostname is not specified, then the container inherits the host's
+name, with "-isolate-gpu" appended, plus the index of each GPU
+isolated.
+
+EOF
+}
+
+if [ -f "/.dockerenv" ]; then
+    echoerr "$ME: Already in a Docker container.  Run from host instead."
+    exit 1
+fi
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+	-d|--device)
+	    GPU_IDXS+=("$2")
+	    # Past argument.
+	    shift
+	    # Past value.
+	    shift
+	    ;;
+	-H|--hostname)
+	    CONTAINER_HOSTNAME="$2"
+	    # Past argument.
+	    shift
+	    # Past value.
+	    shift
+	    ;;
+	-v)
+	    VERBOSE=1
+	    # Past argument.
+	    shift
+	    ;;
+	-h|--help)
+	    help
+	    exit 0
+	    ;;
+	--)
+	    # Past argument.
+	    shift
+	    break
+	    ;;
+	-*)
+	    echo "$ME: unrecognized option '$1'" 1>&2
+	    suggest_help 1>&2
+	    exit 1
+	    ;;
+	*)
+	    break
+	    ;;
+    esac
+done
+
+if [ ${#GPU_IDXS[@]} -eq 0 ]; then
+    echoerr "$ME: No GPUs specified."
+    suggest_help
+    exit 1
+fi
+
+# List of devices to expose to the container.  Currently AMD-specific.
+DEVICES=("/dev/kfd")
+
+# The suffix to append to the container's hostname (if -H is not
+# specified).  We append the GPU indexes to the hostname for easier
+# identification in e.g. bash prompts.
+HOSTNAME_SUFFIX=""
+
+# Note that "docker run --gpus" is Nvidia specific at the time of
+# writing: https://github.com/docker/cli/issues/2063.
+#
+# So for AMD, we append the /dev/dri/renderD128 etc. device that
+# corresponds to the requested GPU index, to the list of devices to
+# pass down.
+#
+for gpu_idx in "${GPU_IDXS[@]}"; do
+    render_num=$((128 + $gpu_idx))
+    DEVICES+=("/dev/dri/renderD$render_num")
+
+    # Append the index to the hostname, while at it.
+    HOSTNAME_SUFFIX+="-$gpu_idx"
+done
+
+# Iterate over the DEVICES and prefix each element with "--device=",
+# as final options to pass to docker run.
+for ((i=0; i<${#DEVICES[@]}; i++)); do
+    DEVICES[$i]="--device=${DEVICES[$i]}"
+done
+
+if [ -z "$CONTAINER_HOSTNAME" ]; then
+    CONTAINER_HOSTNAME="$HOSTNAME-isolate-gpu$HOSTNAME_SUFFIX"
+fi
+
+# The set of host directories to mount read-only in the container.
+# Only directories that exist are mounted, as not all directories
+# exist in all distributions.
+RO_DIRS=(/bin
+	 /sbin
+	 /lib
+	 /lib32
+         /libx32
+	 /lib64
+	 /etc
+	 /var
+	 /usr
+	 /opt
+	 /snap)
+
+# The set of host directories to mount read-write in the container.
+RW_DIRS=(/tmp
+	 /home
+	 /net
+	 /mnt)
+
+# Build the set of "-v" options to pass to docker run.
+VOLS=()
+
+for dir in "${RO_DIRS[@]}"; do
+    if [ -e $dir ]; then
+	VOLS+=(-v $dir:$dir:ro)
+    fi
+done
+
+for dir in "${RW_DIRS[@]}"; do
+    if [ -e $dir ]; then
+	VOLS+=(-v $dir:$dir:z)
+    fi
+done
+
+# Run container as the same user as the current user, and add the user
+# inside the container to the same groups as the current user is a
+# member of.
+
+# Get a list of groups the user belongs to in numeric form.
+groups_list=$(id -G)
+
+# Convert the space-separated list into an array.
+read -a groups_array <<< "$groups_list"
+
+# Prepare the --group-add options.
+group_add_options=()
+for group_id in "${groups_array[@]}"; do
+    group_add_options+=(--group-add $group_id)
+done
+
+docker run -it --rm \
+       -u $(id -u):$(id -g) \
+       "${group_add_options[@]}" \
+       --cap-add=SYS_PTRACE \
+       --security-opt seccomp=unconfined \
+       "${DEVICES[@]}" \
+       --network=host \
+       -e USER \
+       -e SHELL \
+       -e ISOLATE_GPU_CWD="$(pwd)" \
+       -h "$CONTAINER_HOSTNAME" \
+       "${VOLS[@]}" \
+       isolate-gpu "$@"
