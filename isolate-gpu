@@ -5,11 +5,6 @@
 # The container's entry point cd's to the host's current working
 # directory, passed down by ISOLATE_CWD.
 #
-# I have network filesystems mounted under /net, and I typically have
-# sources or build dirs on network drives, so I'm mounting those as
-# well in the container.  If you don't have /net on your system,
-# you'll just end up with an empty /net dir in the container.
-#
 # Append "-isolate-gpu" to the hostname inside the container, to make
 # it easy to tell when inside the container in shell prompts.
 #
