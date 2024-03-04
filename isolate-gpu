@@ -13,10 +13,8 @@
 #  writing.  It's also slightly faster than --network=none.
 #
 
-DIR=$(dirname -- "$0";)
 ME=$(basename "$0")
 
-VERBOSE=0
 CONTAINER_HOSTNAME=
 GPU_IDXS=()
 
@@ -38,7 +36,6 @@ Options:
   -d, --device GPU_IDX	   Index of the GPU to isolate.	 Must be specified
 			   at least one, and can be specified more than once.
   -H, --hostname HOSTNAME  Optional hostname to use in the container.
-  -v			   Be verbose.
   -h, --help		   Display this help and exit.
   --                       Stop processing command line arguments.
 
@@ -80,11 +77,6 @@ while [[ $# -gt 0 ]]; do
 	    # Past argument.
 	    shift
 	    # Past value.
-	    shift
-	    ;;
-	-v)
-	    VERBOSE=1
-	    # Past argument.
 	    shift
 	    ;;
 	-h|--help)
@@ -129,7 +121,7 @@ HOSTNAME_SUFFIX=""
 # pass down.
 #
 for gpu_idx in "${GPU_IDXS[@]}"; do
-    render_num=$((128 + $gpu_idx))
+    render_num=$((128 + gpu_idx))
     DEVICES+=("/dev/dri/renderD$render_num")
 
     # Append the index to the hostname, while at it.
@@ -139,7 +131,7 @@ done
 # Iterate over the DEVICES and prefix each element with "--device=",
 # as final options to pass to docker run.
 for ((i=0; i<${#DEVICES[@]}; i++)); do
-    DEVICES[$i]="--device=${DEVICES[$i]}"
+    DEVICES[i]="--device=${DEVICES[$i]}"
 done
 
 if [ -z "$CONTAINER_HOSTNAME" ]; then
@@ -171,14 +163,14 @@ RW_DIRS=(/tmp
 VOLS=()
 
 for dir in "${RO_DIRS[@]}"; do
-    if [ -e $dir ]; then
-	VOLS+=(-v $dir:$dir:ro)
+    if [ -e "$dir" ]; then
+	VOLS+=(-v "$dir:$dir:ro")
     fi
 done
 
 for dir in "${RW_DIRS[@]}"; do
-    if [ -e $dir ]; then
-	VOLS+=(-v $dir:$dir:z)
+    if [ -e "$dir" ]; then
+	VOLS+=(-v "$dir:$dir:z")
     fi
 done
 
@@ -190,16 +182,16 @@ done
 groups_list=$(id -G)
 
 # Convert the space-separated list into an array.
-read -a groups_array <<< "$groups_list"
+read -r -a groups_array <<< "$groups_list"
 
 # Prepare the --group-add options.
 group_add_options=()
 for group_id in "${groups_array[@]}"; do
-    group_add_options+=(--group-add $group_id)
+    group_add_options+=(--group-add "$group_id")
 done
 
 docker run -it --rm \
-       -u $(id -u):$(id -g) \
+       -u "$(id -u):$(id -g)" \
        "${group_add_options[@]}" \
        --cap-add=SYS_PTRACE \
        --security-opt seccomp=unconfined \
