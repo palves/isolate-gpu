@@ -50,7 +50,7 @@ GPUs are specified by index.  Index 0 corresponds to
 /dev/dri/renderD128, index 1 to /dev/dri/renderD129, etc.
 
 The non-user-data OS directories are mounted readonly within the
-container.  That is, /usr/, /etc, /var/, etc.  This is to avoid the
+container.  That is, /usr, /etc, /var, etc.  This is to avoid the
 possibility of the container corrupting the host.  /home, /net, and
 /mnt, are mounted read-write.
 
