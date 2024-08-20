@@ -8,7 +8,7 @@
 
 FROM scratch
 
-LABEL maintainer "Pedro Alves <pedro@palves.net>"
+LABEL maintainer="Pedro Alves <pedro@palves.net>"
 
 COPY entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
