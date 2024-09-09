@@ -190,7 +190,17 @@ for group_id in "${groups_array[@]}"; do
     group_add_options+=(--group-add "$group_id")
 done
 
-docker run -it --rm \
+EXTRA_OPTS=()
+
+# Go interactive iff we have a terminal.  This avoids "The input
+# device is not a TTY" errors when running a non-interactive session
+# via ssh.  E.g., "ssh server isolate-gpu -d 0 make -C project-dir".
+if [ -t 1 ]; then
+    EXTRA_OPTS+=(-ti)
+fi
+
+docker run --rm \
+       "${EXTRA_OPTS[@]}" \
        -u "$(id -u):$(id -g)" \
        "${group_add_options[@]}" \
        --cap-add=SYS_PTRACE \
