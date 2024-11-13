@@ -1,0 +1,23 @@
+#!/bin/bash
+
+set -e
+
+VERSION=$(git describe --tags --abbrev=0)
+
+# Check if the current commit is tagged with VERSION.
+CURRENT_COMMIT_TAG=$(git describe --tags --exact-match 2>/dev/null \
+			 || echo "none")
+if [ "$CURRENT_COMMIT_TAG" != "$VERSION" ]; then
+    echo "Error: The current commit is not tagged with the latest tag ($VERSION)."
+    echo "Ensure you have checked out the commit matching the latest tag."
+    exit 1
+fi
+
+./build-docker
+
+# Tag and push with the specific version.
+docker tag palves79/isolate-gpu palves79/isolate-gpu:$VERSION
+docker push palves79/isolate-gpu:$VERSION
+
+# Push the "latest" tag.
+docker push palves79/isolate-gpu:latest

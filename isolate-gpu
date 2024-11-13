@@ -212,4 +212,4 @@ docker run --rm \
        -e ISOLATE_GPU_CWD="$(pwd)" \
        -h "$CONTAINER_HOSTNAME" \
        "${VOLS[@]}" \
-       isolate-gpu "$@"
+       palves79/isolate-gpu "$@"
