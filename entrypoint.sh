@@ -2,12 +2,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Author  : Pedro Alves (pedro@palves.net)
 
+cd "$ISOLATE_GPU_CWD" || exit 1
+unset ISOLATE_GPU_CWD
+
 if [ $# -gt 0 ]; then
-    exec sh -c "cd $ISOLATE_GPU_CWD && \
-		unset ISOLATE_GPU_CWD && \
-		$*"
+    exec "$@"
 else
-    exec sh -c "cd $ISOLATE_GPU_CWD && \
-		unset ISOLATE_GPU_CWD && \
-		$SHELL --login"
+    exec $SHELL --login
 fi
